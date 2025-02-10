@@ -3,6 +3,8 @@ from huggingface_hub import login
 from transformers import AutoTokenizer, AutoModelForCausalLM
 from datasets import load_dataset
 from evaluate import load
+from dotenv import load_dotenv
+
 import torch
 import time
 import os
@@ -17,7 +19,7 @@ huggin_face_token = os.getenv("HUGGING_FACE_TOKEN")
 login(huggin_face_token)
 
 # Step 2: Load the Llama 3.2 Model and Tokenizer
-model_name = "Qwen/Qwen2.5-0.5B"
+model_name = "deepseek-ai/DeepSeek-R1-Distill-Qwen-1.5B"
 tokenizer = AutoTokenizer.from_pretrained(model_name, trust_remote_code=True)
 model = AutoModelForCausalLM.from_pretrained(model_name, trust_remote_code=True).to("mps")
 
