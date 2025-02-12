@@ -1,4 +1,3 @@
-# Import necessary libraries
 from huggingface_hub import login
 from transformers import AutoTokenizer, AutoModelForCausalLM
 from evaluate import load
@@ -8,16 +7,17 @@ from dotenv import load_dotenv
 import torch
 import time
 import os
+
 os.environ["TOKENIZERS_PARALLELISM"] = "false"
 load_dotenv()
-huggin_face_token = os.getenv("HUGGING_FACE_TOKEN")
 
-# Step 1: Authenticate 
+huggin_face_token = os.getenv("HUGGING_FACE_TOKEN")
+if not huggin_face_token:
+    raise ValueError("HUGGING_FACE_TOKEN is missing. Ensure it's set in .env.")
 
 login(huggin_face_token)
 
-# Step 2: Load the Llama 3.2 Model and Tokenizer
-model_name = "deepseek-ai/DeepSeek-R1-Distill-Qwen-1.5B"
+model_name = os.getenv("MODEL_NAME")
 tokenizer = AutoTokenizer.from_pretrained(model_name, trust_remote_code=True)
 model = AutoModelForCausalLM.from_pretrained(
     model_name, 
@@ -25,15 +25,14 @@ model = AutoModelForCausalLM.from_pretrained(
     torch_dtype=torch.float16  # Use FP16
 ).to("mps")  # Move to Apple GPU (MPS)
 print("Model Type:", model.dtype)
+
 # Set pad_token_id to eos_token_id if not set
 if tokenizer.pad_token_id is None:
     tokenizer.pad_token_id = tokenizer.eos_token_id
 
-# Step 3: Load the Evaluation Dataset
-
 dataset = Dataset.from_json("custom_dataset.json")
 
-# Step 4: Load Metrics
+# Metrics
 ter = load("ter")
 meteor = load("meteor")
 sacrebleu = load("sacrebleu")
@@ -45,16 +44,13 @@ def retrieve_courses(query, courses_data):
     return relevant_courses
 
 
-# Step 5: Define the Evaluation Function
 def evaluate_model(model, tokenizer, dataset):
     references, predictions = [], []
-    latencies = []  # To store latency times for each response
+    latencies = []
     for item in dataset:
-        # Start the latency timer
         start_time = time.time()
 
-        # Tokenize the input
-        # Tokenize the input with attention mask and padding
+        # Check progress
         for idx, item in enumerate(dataset):
             print(f"Processing item {idx + 1}/{len(dataset)}")
             ...
@@ -65,19 +61,19 @@ def evaluate_model(model, tokenizer, dataset):
         course_recommendations = "Recommended Courses:\n" + "\n".join([f"{course['title']}: {course['description']}" for course in relevant_courses])
         prompt = item["query"] + "\n\n" + course_recommendations
         
-        # Tokenize the combined prompt
         inputs = tokenizer(prompt, return_tensors="pt", padding=True, truncation=True).to("mps")
         
-        # Generate a response from the model
         with torch.no_grad():
-            outputs = model.generate(inputs.input_ids, attention_mask=inputs.attention_mask, max_new_tokens=50)
+            try:
+                outputs = model.generate(inputs.input_ids, attention_mask=inputs.attention_mask, max_new_tokens=50)
+            except RuntimeError as e:
+                print(f"Error during generation: {e}")
+                continue
 
 
-        # End the latency timer and calculate elapsed time  
         latency = time.time() - start_time
         latencies.append(latency)
 
-        # Decode the model's output
         prediction = tokenizer.decode(outputs[0], skip_special_tokens=True)
 
         # Store predictions and references for metric calculation
@@ -85,7 +81,6 @@ def evaluate_model(model, tokenizer, dataset):
         references.append(item["additional_info"])
 
         
-    # Calculate average latency
     avg_latency = sum(latencies) / len(latencies)
 
     # Calculate metrics
@@ -95,6 +90,6 @@ def evaluate_model(model, tokenizer, dataset):
 
     return {"METEOR": meteor_score, "SACREBLEU": sacrebleu_score, "TER": ter_score, "Average Latency (seconds)": avg_latency}
 
-# Step 6: Run the Evaluation
+
 results = evaluate_model(model, tokenizer, dataset)
 print(results)
